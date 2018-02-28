@@ -19,7 +19,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
     config: {
         defaultSettings: {
             maxIterations: 6,    //Allow user to override
-            filterCapacities: true
+            filterCapacities: false
         }
     },
 
@@ -189,9 +189,9 @@ Ext.define('Niks.Apps.TeamLoading2', {
     nodeId: 0,
     
     _update: function(source) {
-debugger;
         var nodes = gApp.root.descendants();
         var height = Math.max(800, nodes.length * gApp.barHeight + gApp.margin.top + gApp.margin.bottom);
+
         var diagonal = d3.linkHorizontal()
             .x(function(d) { return d.y; })
             .y(function(d) { return d.x; });
@@ -250,6 +250,11 @@ debugger;
                             return iteration.capacity ? 
                                 Math.trunc((iteration.taskEstimate/iteration.capacity) * 10000)/100:
                                 0;
+                        }
+                        else {
+                            if (d.parent === null ) {
+                                return gApp.columnConfig[index].name;
+                            }
                         }
                         return '';
                     });
