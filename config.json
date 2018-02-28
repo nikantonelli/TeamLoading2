@@ -1,0 +1,13 @@
+{
+    "name": "TeamSprintLoading",
+    "className": "Niks.Apps.TeamLoading2",
+    "server": "https://rally1.rallydev.com",
+    "sdk": "2.1",
+    "javascript": [
+        "App.js",
+        "d3.js"
+    ],
+    "css": [
+        "app.css"
+    ]
+}
