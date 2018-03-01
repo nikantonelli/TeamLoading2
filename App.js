@@ -35,8 +35,15 @@ Ext.define('Niks.Apps.TeamLoading2', {
         }
     ],
 
-    columnConfig: [],
+    iterationList: [],
     allUsers: [],
+
+    treeRoot: {
+        Name: 'All Node and Sub-Node Team Members',
+        children: [],
+        taskEstimate: 0,
+        capacity: 0
+    },
 
     margin: {top: 30, right: 20, bottom: 30, left: 20},
     treewidth: 300,
@@ -63,12 +70,22 @@ Ext.define('Niks.Apps.TeamLoading2', {
         return returned;
     },
 
-    _onElementValid: function(rootSurface) {
-        this._setSVGSize(rootSurface);
-
+    _createSVGGroup: function() {
+        if (gApp.svg) { 
+            gApp.svg.transition()
+            .duration(gApp.duration)
+            .attr("transform", function() { return "translate(0,0)"; })
+            .style("opacity", 0)
+            .remove();
+        }
         gApp.svg = d3.select('svg')
             .append("g")
                 .attr("transform", "translate(" + gApp.margin.left + "," + gApp.margin.top + ")");
+    },
+
+    _onElementValid: function(rootSurface) {
+        this._setSVGSize(rootSurface);
+        this._createSVGGroup();
 
         //Add the sprint filters to the top box:
         var me = this;
@@ -100,62 +117,51 @@ Ext.define('Niks.Apps.TeamLoading2', {
     },
 
     _iterationSelect: function(){
-        debugger;
+        //remove all the svg stuff and any tables and arrays stored in prep
+        // me.iterationList gets trashed by _defineIterationList
+        //gApp.svg should remain but all children should be removed
+        this._createSVGGroup();
+        this.allUsers = [];
+        this.fireEvent('iterationsReady');
     },
 
     _iterationLoad: function(){
         this.fireEvent('iterationsReady');
     },
 
-    _defineDefaultColumnConfig: function() {
+    _defineIterationList: function() {
         var me = this;
         /* We need to get the SVG pane, split it into columns: 
             1: Persons name
             2: Project in Question
             3-n: Iterations
+
+            But we only need certain chosen
         */
-       me.columnConfig = [];
+       me.iterationList = [];
 
         //Find the iterations we need
         var store = gApp.down('#iterCbx').getStore();
         var startRecord = gApp.down('#iterCbx').getRecord().index;
         //Sort order is backwards for iterations
         for ( var j = 0, i = startRecord; (i >= 0) && ( j < gApp.getSetting('maxIterations')) ; --i, j++) {    
-            me.columnConfig.push({
-                name: store.getRecords()[i].get('Name'),
-                recordType: 'Iteration',
-                fieldName: 'Name',
-                actuals: 0,        //Use this record later per user
-                taskEstimate: 0,
-                capacity: 0
+            me.iterationList.push({
+                'record': store.getRecords()[i],
+                'actuals': 0,        //Use this for summing the record later
+                'taskEstimate': 0,
+                'capacity': 0,
+                'valid': false
             });
         }
         me.fireEvent('columnsReady');
     },
 
-    _drawTree: function(tree) {
-        gApp.root = d3.hierarchy(tree);
-        gApp.root.eachAfter( function(n) {
-            //Sum up the  numbers for colour choices
-            n.capacity = 0;
-            n.taskEstimate = 0;
-            n.actuals = 0;
-            if ( n.children) {
-                //This is a parent node, so sum the sums
-                _.each(n.children, function(child){
-                    n.capacity += child.capacity;
-                    n.taskEstimate += child.taskEstimate;
-                    n.actuals += child.actuals;
-                });
-            } else {
-                //Leaf node, so sum the iterations
-                _.each(n.data.iterations, function(child){
-                    n.capacity += child.capacity;
-                    n.taskEstimate += child.taskEstimate;
-                    n.actuals += child.actuals;
-                });
-            }
-        });
+    _drawTree: function() {
+        gApp.root = d3.hierarchy(gApp.treeRoot);
+        _.each(gApp.root.leaves(), function(leaf) {
+            gApp.root.data.capacity += leaf.data.capacity;
+            gApp.root.data.taskEstimate += leaf.data.taskEstimate;
+        })
         gApp.root.x0 = 0;
         gApp.root.y0 = 0;
         gApp._update(gApp.root);
@@ -190,7 +196,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
         gApp.svg.transition()
             .duration(gApp.duration)
             .attr("height", height)
-            .attr("width", (gApp.iterationColoumnWidth * gApp.columnConfig.length) +
+            .attr("width", (gApp.iterationColoumnWidth * gApp.iterationList.length) +
                 gApp.treewidth + gApp.margin.left + gApp.margin.right);
 
         var index = -1;
@@ -209,17 +215,35 @@ Ext.define('Niks.Apps.TeamLoading2', {
             .style("opacity", 0);
       
         // Enter any new nodes at the parent's previous position.
+        
         nodeEnter.append("rect")
             .attr("y", -gApp.barHeight / 2)
             .attr("height", gApp.barHeight)
             .attr("width", gApp.barWidth)
-            .style("fill", gApp.colour)
-            .on("click", gApp._click);
+            .style("fill", function(d) { return gApp.colour(d.data);})
+            .on("click", function(d,a,b,c) {
+                if (event.shiftKey) {
+                    //Find the parent and close all the children (not the parent)
+                    if (d.parent && d.parent.children) {
+                        _.each(d.parent.children, function(child) {
+                            gApp._click(child);
+                        });
+                    }
+                } else {
+                    gApp._click(d)
+                }
+            // })            
+            // .on("auxclick", function(d,a,b,c) {
+            //     debugger;
+            //     gApp._click(d)
+            });
       
         nodeEnter.append("text")
             .attr("dy", 3.5)
             .attr("dx", 5.5)
-            .text(function(d) { return d.data.name; });
+            .text(function(d) { 
+                return d.data.Name; 
+            });
       
         //Now add all the iteration information on the end of the record
         nodeEnter.call( function(n) {
@@ -228,23 +252,45 @@ Ext.define('Niks.Apps.TeamLoading2', {
                 return "translate(" + (gApp.treewidth - (d.depth * gApp.barIndent)) + "," + (-gApp.barHeight / 2) + ")"; 
             });
 
-            _.each( gApp.columnConfig, function(column, index) {
+            _.each( gApp.iterationList, function(column, index) {
 
                 iterationGroup.append('text')
 //                    .attr('dy', -gApp.margin.top)
-                    .attr('dy', gApp.barHeight/2)
+                    .attr('dy', gApp.barHeight - 5)
                     .attr('dx', gApp.iterationColoumnWidth * (index + 0.5))
                     .style("text-anchor",  'middle')
                     .text( function(d) { 
                         var iteration = d.data.iterations ? d.data.iterations[index] : 0;
                         if ( iteration) {
-                            return iteration.capacity ? 
-                                Math.trunc((iteration.taskEstimate/iteration.capacity) * 10000)/100:
-                                0;
+                            return iteration.valid ?
+                            iteration.capacity ? 
+                                (Math.trunc((iteration.taskEstimate/iteration.capacity) * 10000)/100):0
+                                : '-'
                         }
-                        else {
-                            if (d.parent === null ) {
-                                return gApp.columnConfig[index].name;
+                        if (d.parent === null ) {
+                            return gApp.iterationList[index].record.get('Name');
+                        }
+                        if (d.data.valid) {
+                            //Sum up the particular iteration of all the children
+                            childSum = {
+                                taskEstimate: 0,
+                                capacity: 0,
+                                sumValid: false
+                            };
+
+                            _.each(d.children, function(child) {
+                                var iteration = child.data.iterations ? child.data.iterations[index] : 0;
+                                if ( iteration && iteration.valid) {
+                                    childSum.taskEstimate += iteration.taskEstimate;
+                                    childSum.capacity += iteration.capacity;
+                                    childSum.sumValid = true;
+                                }            
+                            });
+
+                            if (childSum.sumValid) {
+                                return childSum.capacity ? 
+                                    Math.trunc((childSum.taskEstimate/childSum.capacity) * 10000)/100:
+                                0;
                             }
                         }
                         return '';
@@ -254,11 +300,93 @@ Ext.define('Niks.Apps.TeamLoading2', {
                     .style("fill", function(d) {
                             var iteration = d.data.iterations ? d.data.iterations[index] : 0;
                             if ( iteration) return gApp.colour(iteration);
-                            return '#ffffff';
+                            if ( d.parent === null) return '#ffffff'
+                            if (d.children) return gApp.colour(d.data);
+                            return '#ffffff';   //Default if we fail the above tests
                         })
                     .attr("height", gApp.barHeight)
                     .attr('x', index * gApp.iterationColoumnWidth)
-                    .attr("width", gApp.iterationColoumnWidth);
+                    .attr("width", gApp.iterationColoumnWidth)
+                    .on('click', function(d,i,a) {
+                        if (!d.children) {      //Only do this at the bottom
+                            debugger;
+                            if (!d.cont) {
+                                var cont = Ext.create( 'Ext.Container', {
+                                    floating: true,
+                                    items: [{
+                                        xtype: 'rallygrid',
+                                        columnCfgs: [
+                                            'FormattedID',
+                                            'Name',
+                                            'Owner'
+                                        ],
+                                        storeConfig: {
+                                            model: 'task',
+                                            filters: [
+                                                {
+                                                    property: 'Owner',
+                                                    value: d.data.userRef
+                                                },
+                                                {
+                                                    property: 'Iteration',
+                                                    value: d.data.iterations[index]
+                                                },
+                                                {
+                                                    property: 'Project',
+                                                    value: d.data.projRef
+                                                }
+                                            ]
+                                        },
+                                        listeners: {
+                                            show: function() { debugger;}
+                                        },
+                                        constrain: false,
+                                        width: 600,
+                                        height: 'auto',
+                                        resizable: true,
+                                        closable: true
+                                    }]
+                                });
+                            }
+                            cont.show();
+                        }
+                        else if ( d.parent) {   //Do this for the middle ones
+                            debugger;
+                            var cont = Ext.create( 'Ext.Container', {
+                                floating: true,
+                                items: [{
+                                    xtype: 'rallygrid',
+                                    columnCfgs: [
+                                        'FormattedID',
+                                        'Name',
+                                        'Owner'
+                                    ],
+                                    storeConfig: {
+                                        model: 'task',
+                                        filters: [
+                                            {
+                                                property: 'Owner',
+                                                value: d.data.userRef
+                                            },
+                                            // {
+                                            //     property: 'Iteration',
+                                            //     value: d.data.iterations[index]
+                                            // }
+                                        ]
+                                    },
+                                    listeners: {
+                                        show: function() { debugger;}
+                                    },
+                                    constrain: false,
+                                    width: 600,
+                                    height: 'auto',
+                                    resizable: true
+                                }]
+                            });
+                            cont.show();
+
+                        }
+                    });
                 });
             });
 
@@ -273,7 +401,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
             .attr("transform", function(d) { return "translate(" + d.y + "," + d.x + ")"; })
             .style("opacity", 1)
             .select("rect")
-            .style("fill", gApp.colour);
+            .style("fill", function(d) { return gApp.colour(d.data);});
       
         // Transition exiting nodes to the parent's new position.
         node.exit()
@@ -408,57 +536,6 @@ Ext.define('Niks.Apps.TeamLoading2', {
         });
     },
 
-    _redraw: function(userCapEntries) {
-
-        //TODO: Clear out all old data and drawings
-
-        if (userCapEntries.length === 0 ) {
-            Rally.ui.notify.Notifier.showError( { message: 'No user capacities set for Iteration(s) selection'});
-            return;
-        }
-
-        //Create a tree for each user and sum the capacities against estimates 
-        var treeRoots = [];
-        _.each(_.uniq(userCapEntries, 'user'), function(entry) {
-            treeRoots.push({
-                name: entry.user,
-                ref: entry.userRef,
-                children: [],
-                capacity: 0,
-                actuals: 0,
-                taskEstimate: 0
-            });
-        });
-
-        _.each(userCapEntries, function(entry) {
-            var user = _.find(treeRoots,{ 'ref': entry.userRef});
-            if (user) {
-                var childProj =  {
-                    name: entry.project,
-                    capacity: 0,
-                    actuals: 0,
-                    taskEstimate: 0,
-                    iterations: []
-                };
-                _.each(entry.iterations, function(iteration) {
-                    childProj.iterations.push({
-                        name: iteration.name,
-                        capacity: iteration.capacity,
-                        actuals: iteration.actuals,
-                        taskEstimate: iteration.taskEstimate
-                    });
-                });
-                user.children.push(childProj);
-            }
-        });
-        gApp._drawTree( 
-            {
-                name: 'All Node and Sub-Node Team Members',
-                children: treeRoots
-            }
-        );
-    },
-
     _defineUsersInvolved: function(records) {
         //Extract team members and give each of them a project record
         var promises = [];
@@ -478,54 +555,86 @@ Ext.define('Niks.Apps.TeamLoading2', {
                     //for the user and a store record which references the Project. We need to scan these and 
                     //generate an array like this:
                     // { user, project, [iteration loads]}
-                    var userCapEntries = [];
                     _.each(arraysOfTeams, function (teammembers) {
                         _.each(teammembers, function(member) {
-                            gApp.allUsers.push(member);
-                            userCapEntries.push(
-                                {
-                                    user: member.get('_refObjectName'),
-                                    userRef: member.get('_ref'),
-                                    project: member.store.config.record.get('_refObjectName'),
-                                    projectRef: member.store.config.record.get('_ref'),
-                                    iterations: Ext.clone(gApp.columnConfig)
-                                }
-                            );
+                            var userNode = _.find(gApp.treeRoot.children, function(child) {
+                                return child.record.get('ObjectID') === member.get('ObjectID');
+                            });
+
+                            // If we don't already have this user in the tree, add it in.
+                            if ( !userNode) {
+                                userNode = {
+                                    'Name' : member.get('_refObjectName'),
+                                    'record' : member,
+                                    'children' : [],
+                                    'actuals' : 0,
+                                    'taskEstimate' : 0,
+                                    'capacity' : 0
+                                };
+                                gApp.treeRoot.children.push(userNode); 
+                                gApp.treeRoot.children = _.sortBy(gApp.treeRoot.children, 'Name');   
+                            }
+                            //Now set up the project entries on those users
+                            //The project for this member record is buried in the store
+                            var project = member.store.config.record
+
+                            var projNode = _.find(userNode.children, function(child) {
+                                return child.record.get('ObjectID') === project.get('ObjectID');
+                            });
+                            if ( !projNode) {
+                                projNode = {
+                                    'Name' : project.get('_refObjectName'),
+                                    'record' : project,
+                                    'children' : [],
+                                    'actuals' : 0,
+                                    'taskEstimate' : 0,
+                                    'capacity' : 0,
+                                    'valid' : false, //Set this when we find an UserIterationCapacity entry
+                                };
+                                userNode.children.push(projNode);
+                                userNode.children = _.sortBy(userNode.children, 'Name');
+                            }
                         });
                     });
 
-                    gApp.allUsers = _.uniq(gApp.allUsers, 'ObjectID');
-
-                    gApp._doUserIterationCapacities(userCapEntries). then ( {
+                    gApp._doUserIterationCapacities(). then ( {
                         success: function(records) {
-                            //Fill in the userCapEntries table here
+                            //Fill in the iterations
                             _.each(records, function(record) {
-                                var entry = _.find(userCapEntries, function( capEntry) {
-                                    return (( capEntry.userRef === record.get('User')._ref) && 
-                                        ( capEntry.projectRef === record.get('Project')._ref));
+                                //First find the user node in the tree
+                                var userNode = _.find(gApp.treeRoot.children, function( un) {
+                                    return ( un.record.get('_ref') === record.get('User')._ref);
                                 });
-                                if (entry) {
-                                    var iteration = _.find(entry.iterations, function(iteration) {
-                                        return (iteration.name === record.get('Iteration')._refObjectName);
+                                //Then if we have one (should do as the code is architected this way)
+                                if (userNode) {
+                                    //Then find the project node
+                                    var projNode = _.find(userNode.children, function(project) {
+                                        return (project.record.get('_ref') === record.get('Project')._ref);
                                     });
-                                    if (iteration) {    //Could have filtered away some iterations above
-                                        iteration.capacity = record.get('Capacity');
-                                        iteration.taskEstimate = record.get('TaskEstimates');
+                                    if (projNode) {
+                                        //Check for whether the iteration is there
+                                        if (!projNode.iterations) {
+                                            projNode.iterations = Ext.clone(gApp.iterationList);
+                                        }
+                                        var iteration = _.find(projNode.iterations, function(iter) {
+                                            return (iter.record.get('_refObjectName') === record.get('Iteration')._refObjectName);
+                                        });
+                                        if (iteration) {    //Could have filtered away some iterations above
+                                            iteration.capacity += record.get('Capacity');
+                                            iteration.taskEstimate += record.get('TaskEstimates');
+                                            iteration.valid = true;
+                                            projNode.capacity += record.get('Capacity');
+                                            projNode.taskEstimate += record.get('TaskEstimates');
+                                            projNode.valid = true;
+                                            userNode.capacity += record.get('Capacity');
+                                            userNode.taskEstimate += record.get('TaskEstimates');
+                                            userNode.valid = true;
+                                        }
                                     }
                                 }
                             });
-                            
                             //TODO: Jump off and get actuals first?????
-                            if ( gApp.getSetting('filterCapacities') === true) {
-                                gApp._redraw(_.filter( _.sortBy(userCapEntries, ['user', 'project']), function( entry) {
-                                    //Check if any iteration has an entry
-                                    return _.find( entry.iterations, function(iteration) {
-                                        return (iteration.capacity > 0);
-                                    });
-                                }));
-                            } else {
-                                gApp._redraw(_.sortBy(userCapEntries, ['user', 'project']));
-                            }
+                            gApp._drawTree();
                         },
                         failure: function() {
                             console.log('Oops!', arguments);
@@ -538,16 +647,15 @@ Ext.define('Niks.Apps.TeamLoading2', {
         }
     },
 
-    _doUserIterationCapacities: function(userCapEntries) {
+    _doUserIterationCapacities: function() {
 
         var deferred = Ext.create('Deft.Deferred');
-
-        var users = _.uniq(userCapEntries, 'user');
         var userFilters = [];
-        _.each(users, function(user) {
+
+        _.each(gApp.treeRoot.children, function(user) {
             userFilters.push ( {
                 property: 'User',
-                value: user.userRef
+                value: user.record.get('_ref')
             });
         });
         Ext.create('Rally.data.wsapi.Store',{
@@ -586,7 +694,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
             this._getProjectsList();
         },
         iterationsReady: function() {
-            this._defineDefaultColumnConfig();
+            this._defineIterationList();
         }
     },
 

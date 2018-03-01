@@ -72,12 +72,22 @@ Ext.define('Niks.Apps.TeamLoading2', {
         return returned;
     },
 
-    _onElementValid: function(rootSurface) {
-        this._setSVGSize(rootSurface);
-
+    _createSVGGroup: function() {
+        if (gApp.svg) { 
+            gApp.svg.transition()
+            .duration(gApp.duration)
+            .attr("transform", function() { return "translate(0,0)"; })
+            .style("opacity", 0)
+            .remove();
+        }
         gApp.svg = d3.select('svg')
             .append("g")
                 .attr("transform", "translate(" + gApp.margin.left + "," + gApp.margin.top + ")");
+    },
+
+    _onElementValid: function(rootSurface) {
+        this._setSVGSize(rootSurface);
+        this._createSVGGroup();
 
         //Add the sprint filters to the top box:
         var me = this;
@@ -109,7 +119,12 @@ Ext.define('Niks.Apps.TeamLoading2', {
     },
 
     _iterationSelect: function(){
-        debugger;
+        //remove all the svg stuff and any tables and arrays stored in prep
+        // me.columnConfig gets trashed by _defineDefaultColumnConfig
+        //gApp.svg should remain but all children should be removed
+        this._createSVGGroup();
+        this.allUsers = [];
+        this.fireEvent('iterationsReady');
     },
 
     _iterationLoad: function(){
@@ -223,7 +238,22 @@ Ext.define('Niks.Apps.TeamLoading2', {
             .attr("height", gApp.barHeight)
             .attr("width", gApp.barWidth)
             .style("fill", gApp.colour)
-            .on("click", gApp._click);
+            .on("click", function(d,a,b,c) {
+                if (event.shiftKey) {
+                    //Find the parent and close all the children (not the parent)
+                    if (d.parent && d.parent.children) {
+                        _.each(d.parent.children, function(child) {
+                            gApp._click(child);
+                        });
+                    }
+                } else {
+                    gApp._click(d)
+                }
+            // })            
+            // .on("auxclick", function(d,a,b,c) {
+            //     debugger;
+            //     gApp._click(d)
+            });
       
         nodeEnter.append("text")
             .attr("dy", 3.5)
@@ -241,7 +271,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
 
                 iterationGroup.append('text')
 //                    .attr('dy', -gApp.margin.top)
-                    .attr('dy', gApp.barHeight/2)
+                    .attr('dy', gApp.barHeight - 5)
                     .attr('dx', gApp.iterationColoumnWidth * (index + 0.5))
                     .style("text-anchor",  'middle')
                     .text( function(d) { 
@@ -254,6 +284,23 @@ Ext.define('Niks.Apps.TeamLoading2', {
                         else {
                             if (d.parent === null ) {
                                 return gApp.columnConfig[index].name;
+                            } else {
+                                //Sum up the particular iteration of all the children
+                                d.childSum = {
+                                    taskEstimate: 0,
+                                    capacity: 0
+                                };
+
+                                _.each(d.children, function(child) {
+                                    var iteration = child.data.iterations ? child.data.iterations[index] : 0;
+                                    if ( iteration) {
+                                        d.childSum.taskEstimate += iteration.taskEstimate;
+                                        d.childSum.capacity += iteration.capacity;
+                                    }            
+                                });
+                                return d.childSum.capacity ? 
+                                    Math.trunc((d.childSum.taskEstimate/d.childSum.capacity) * 10000)/100:
+                                0;
                             }
                         }
                         return '';
@@ -263,7 +310,9 @@ Ext.define('Niks.Apps.TeamLoading2', {
                     .style("fill", function(d) {
                             var iteration = d.data.iterations ? d.data.iterations[index] : 0;
                             if ( iteration) return gApp.colour(iteration);
-                            return '#ffffff';
+                            if ( d.parent === null) return '#ffffff'
+                            if (d.children) return gApp.colour(d.childSum);
+                            return '#ffffff';   //Default if we fail the above tests
                         })
                     .attr("height", gApp.barHeight)
                     .attr('x', index * gApp.iterationColoumnWidth)
@@ -17805,7 +17854,7 @@ Object.defineProperty(exports, '__esModule', { value: true });
   stroke-width: 1.5px;
 }
 .node text {
-  font: 10px sans-serif;
+  font: 12px sans-serif;
   pointer-events: none;
 }
 .link {
