@@ -5,7 +5,7 @@ TeamSprintLoading
 
 Fora particular node context you are in, find all the User Iteration Capacity entries in the system and try to construct a table to reflect the data for all the iterations and users.
 
-![alt text](https://github.com/nikantonelli/TeamLoading2/blob/master/Images/Untitled.jpg)
+![alt text](https://github.com/nikantonelli/TeamLoading2/blob/master/Images/Untitled.png)
 
 ## License
 
