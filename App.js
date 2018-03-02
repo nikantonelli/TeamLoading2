@@ -17,8 +17,21 @@ Ext.define('Niks.Apps.TeamLoading2', {
     items: [
         {  
             xtype: 'container',
-            itemId: 'filterBox'
-        },{
+            itemId: 'filterBox',
+            layout: {
+                type: 'hbox',
+                align: 'stretch'
+            }
+        },
+        {  
+            xtype: 'container',
+            itemId: 'panelBox',
+            layout: {
+                type: 'vbox',
+                align: 'stretch'
+            }
+        },
+        {
             xtype: 'container',
             itemId: 'rootSurface',
             margin: '5 5 5 5',
@@ -38,7 +51,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
     iterationList: [],
     allUsers: [],
 
-    treeRoot: {
+    defaultTreeRoot: {
         Name: 'All Node and Sub-Node Team Members',
         children: [],
         taskEstimate: 0,
@@ -51,6 +64,10 @@ Ext.define('Niks.Apps.TeamLoading2', {
     duration: 400,
     barIndent: 20,
     iterationColoumnWidth: 150,
+
+    onSettingsUpdate: function() {
+        gApp.fireEvent('kickOff');
+    },
 
     getSettingsFields: function() {
         var returned = [
@@ -89,25 +106,118 @@ Ext.define('Niks.Apps.TeamLoading2', {
 
         //Add the sprint filters to the top box:
         var me = this;
-        this.down('#filterBox').add({
+        me.down('#filterBox').add({
             xtype: 'rallyiterationcombobox',
             fieldLabel: 'Choose Start Iteration:',
             labelWidth: 120,
+            stateId: this.getContext().getScopedStateId('iteration-filter'),
+            context: this.getContext(),
             margin: '5 5 5 5',
-            stateId: Ext.id() + 'iterBox',
             stateful: true,
             maxWidth: 600,
             width: 600,
             itemId: 'iterCbx',
-
             listeners: {
-                select: me._iterationSelect,
+                select: me._newSelection,
                 ready: me._iterationLoad,
                 scope: me
             }
         });
 
-        
+        var blackListFields = ['Successors', 'Predecessors', 'DisplayColor', 'Iteration'], //Don't allow Iterations filter
+            whiteListFields = ['User'];
+
+        var modelNames = ['UserIterationCapacity'];
+        this.down('#filterBox').add({
+            xtype: 'rallyinlinefiltercontrol',
+           context: this.getContext(),
+            height: 26,
+            inlineFilterButtonConfig: {
+                stateful: true,
+                stateId: me.getContext().getScopedStateId('inline-filter'),
+                context: me.getContext(),
+                modelNames: modelNames,
+                filterChildren: false,
+                inlineFilterPanelConfig: {
+                    quickFilterPanelConfig: {
+                        defaultFields: ['User'],
+                        addQuickFilterConfig: {
+                            blackListFields: blackListFields,
+                            whiteListFields: whiteListFields
+                        }
+                    },
+                    advancedFilterPanelConfig: {
+                        advancedFilterRowsConfig: {
+                            propertyFieldConfig: {
+                                blackListFields: blackListFields,
+                                whiteListFields: whiteListFields
+                            }
+                        }
+                    }
+                },
+                listeners: {
+                    inlinefilterchange: me._onFilterChange,
+                    inlinefilterready: me._onFilterReady,
+                    scope: me
+                }
+            }
+        });
+
+        this.down('#filterBox').add({
+            xtype: 'rallybutton',
+            itemId: 'infoButton',
+            margin: '5 5 5 5',
+            align: 'right',
+            text: 'Page Info',
+            handler: function() {
+                Ext.create('Rally.ui.dialog.Dialog', {
+                    autoShow: true,
+                    draggable: true,
+                    closable: true,
+                    width: 500,
+                    autoScroll: true,
+                    maxHeight: 600,
+                    title: 'Information about this app',
+                    items: {
+                        xtype: 'component',
+                        html: 
+                            '<p class="boldText">User Iteration Capacities</p>' +
+                            '<p>This app will find all the team members set up for this node and all child nodes. ' +
+                            'This info is then arranged by person and then by the team they are a member of.</p>' +
+                            '<p class="boldText">Choosing Iterations</p>' +
+                            '<p>The app settings contains an option to allow you to set how many columns of iterations you want' +
+                            ' to view at one time. You can then select the starting iteration from the drop-down selector at the top</p>' +
+                            '<p class="boldText">Managing visibility</p>' +
+                            '<p>The tree of boxes on the left are clickable to expand/collapse users. Using the Shift key whilst clicking on the ' +
+                            'user will cause the expansion/collapsing of all the users nodes</p>' +
+                            '<p>The boxes under the iteration name headers contain numbers which can be considered the current loading for that user' +
+                            ' in that particular project node.</p>' +
+                            '<p>If you click on the box, the app will list all the tasks associated with that box. If the box contains a "-" symbol, ' +
+                            'it means that there are no capacity records for that user, for that iteration in that project. If the box contains a zero,' +
+                            ' then there are records but it is most likely that there are no tasks yet assigned to that user (for that project and iteration)</p>' +
+                            '<p>If you use the "alt" key while clicking on a user, you will be given a pop-up that allows you to view the capacity information' +
+                            ' records for that user.</p>' +
+                            '<p>Advanced Filters are not yet working, but will be soon. Keep checking back into the repo below</p>' +
+                            '<p>Source code available here: <br/><a href=https://github.com/nikantonelli/TeamLoading2> Github Repo</a></p>',
+                        padding: 10
+                    }
+                });
+            }
+
+        })
+
+    },
+
+    _onFilterReady: function(inlineFilterPanel) {
+        this.down('#panelBox').add(inlineFilterPanel);
+    },
+
+    _onFilterChange: function(inlineFilterButton) {
+        gApp.filterInfo = inlineFilterButton.getTypesAndFilters();
+        //This can fire before the app has started up, so just try to catch that!
+        if (gApp.down('#iterCbx').getRecord()) { 
+             gApp._newSelection();
+        }
     },
 
     _setSVGSize: function(surface) {
@@ -116,17 +226,19 @@ Ext.define('Niks.Apps.TeamLoading2', {
         svg.attr('height',surface.getEl().dom.clientHeight);
     },
 
-    _iterationSelect: function(){
+    _newSelection: function(){
         //remove all the svg stuff and any tables and arrays stored in prep
         // me.iterationList gets trashed by _defineIterationList
         //gApp.svg should remain but all children should be removed
+        gApp.treeRoot = Ext.clone(gApp.defaultTreeRoot);
         this._createSVGGroup();
         this.allUsers = [];
-        this.fireEvent('iterationsReady');
+        this.fireEvent('kickOff');
     },
 
     _iterationLoad: function(){
-        this.fireEvent('iterationsReady');
+        gApp.treeRoot = Ext.clone(gApp.defaultTreeRoot);
+        this.fireEvent('kickOff');
     },
 
     _defineIterationList: function() {
@@ -161,14 +273,14 @@ Ext.define('Niks.Apps.TeamLoading2', {
         _.each(gApp.root.leaves(), function(leaf) {
             gApp.root.data.capacity += leaf.data.capacity;
             gApp.root.data.taskEstimate += leaf.data.taskEstimate;
-        })
+        });
         gApp.root.x0 = 0;
         gApp.root.y0 = 0;
         gApp._update(gApp.root);
     },
     
     colour: function (d) {
-        if (!d.capacity) return '#ffffff'
+        if (!d.capacity) { return '#ffffff';}
 
         var load = d.taskEstimate / d.capacity;
         if (load < 0.8) {
@@ -222,7 +334,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
             .attr("height", gApp.barHeight)
             .attr("width", gApp.barWidth)
             .style("fill", function(d) { return gApp.colour(d.data);})
-            .on("click", function(d,a,b,c) {
+            .on("click", function(d) {
                 if (event.shiftKey) {
                     var state = d.children;
                     //Find the parent and close all the children (not the parent)
@@ -244,26 +356,46 @@ Ext.define('Niks.Apps.TeamLoading2', {
                         items: [{
                             xtype: 'rallygrid',
                             margin: '5 5 5 5',
-                            title: 'Settings for ' + d.parent.data.record.get('_refObjectName') +
-                                ', ' + d.data.iterations[index].record.get('_refObjectName') +
-                                ', ' + d.data.record.get('_refObjectName'),
+                            title: 'Capacity Settings for ' + d.data.record.get('_refObjectName'),
+                            bulkEditConfig: {
+                                showEdit: false,
+                                showTag: false,
+                                showParent: false,
+                                showRemove: false
+                            },
+                            context: gApp.getContext(),
+                            enableBulkEdit: true,                
                             columnCfgs: [
-                                'Project',
+                                {
+                                    xtype: 'templatecolumn',
+                                    text: 'Project',
+                                    dataIndex: 'Project',
+                                    tpl: Ext.create('Rally.ui.renderer.template.ObjectTemplate', {
+                                        extend: 'Ext.XTemplate',
+                                        fieldName: 'Project'
+                                    }),
+                                    field: {
+                                      xtype: 'rallyprojectpicker'
+                                    }
+                                  },
                                 'Iteration',
                                 'Capacity',
                                 'TaskEstimates',
                             ],
                             storeConfig: {
-                                model: 'UserIterationCapacities',
+                                model: 'UserIterationCapacity',
                                 filters: [
                                     {
                                         property: 'User',
-                                        value: d.parent.data.record.get('_ref')
+                                        value: d.data.record.get('_ref')
                                     }
-                                ]
+                                ],
+                                listeners: {
+                                    update: function() {  gApp._newSelection();},
+                                }
                             },
                             listeners: {
-                                show: function() { debugger;}
+                                show: function() { debugger;},
                             },
                             constrain: false,
                             width: 800,
@@ -276,7 +408,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
                     cont.show();
                 }
                 else {
-                    gApp._click(d)
+                    gApp._click(d);
                 }
                 event.stopPropagation();
             // })            
@@ -312,7 +444,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
                             return iteration.valid ?
                             iteration.capacity ? 
                                 (Math.trunc((iteration.taskEstimate/iteration.capacity) * 10000)/100):0
-                                : '-'
+                                : '-' ;
                         }
                         if (d.parent === null ) {
                             return gApp.iterationList[index].record.get('Name');
@@ -346,9 +478,9 @@ Ext.define('Niks.Apps.TeamLoading2', {
                 iterationGroup.append("rect")
                     .style("fill", function(d) {
                             var iteration = d.data.iterations ? d.data.iterations[index] : 0;
-                            if ( iteration) return gApp.colour(iteration);
-                            if ( d.parent === null) return '#ffffff'
-                            if (d.children) return gApp.colour(d.data);
+                            if ( iteration) { return gApp.colour(iteration); }
+                            if ( d.parent === null) { return '#ffffff';}
+                            if (d.children) { return gApp.colour(d.data); }
                             return '#ffffff';   //Default if we fail the above tests
                         })
                     .attr("height", gApp.barHeight)
@@ -359,7 +491,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
                         if (!d.children) {      //Only do this at the bottom
 
                             if (!d.cont) {
-                                var cont = Ext.create( 'Ext.Container', {
+                                var contP = Ext.create( 'Ext.Container', {
                                     floating: true,
                                     items: [{
                                         xtype: 'rallygrid',
@@ -403,11 +535,11 @@ Ext.define('Niks.Apps.TeamLoading2', {
                                     }],
                                     draggable: true
                                 });
+                                contP.show();
                             }
-                            cont.show();
                         }
                         else if ( d.parent) {   //Do this for the middle ones
-                            var cont = Ext.create( 'Ext.Container', {
+                            var contI = Ext.create( 'Ext.Container', {
                                 floating: true,
                                 items: [{
                                     xtype: 'rallygrid',
@@ -446,8 +578,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
                                 }],
                                 draggable: true
                             });
-                            cont.show();
-
+                            contI.show();
                         }
                     });
                 });
@@ -542,38 +673,39 @@ Ext.define('Niks.Apps.TeamLoading2', {
         //this.....
         var projFilters = [
             {
-                value: project.Name,
-                property: 'Name'
+                value: project.ObjectID,
+                property: 'ObjectID'
             },
             {
-                value: project.Name,
-                property: 'Parent.Name'
+                value: project.ObjectID,
+                property: 'Parent.ObjectID'
             },
             {
-                value: project.Name,
-                property: 'Parent.Parent.Name'
+                value: project.ObjectID,
+                property: 'Parent.Parent.ObjectID'
             },
             {
-                value: project.Name,
-                property: 'Parent.Parent.Parent.Name'
+                value: project.ObjectID,
+                property: 'Parent.Parent.Parent.ObjectID'
             },
             {
-                value: project.Name,
-                property: 'Parent.Parent.Parent.Parent.Name'
+                value: project.ObjectID,
+                property: 'Parent.Parent.Parent.Parent.ObjectID'
             },
             {
-                value: project.Name,
-                property: 'Parent.Parent.Parent.Parent.Parent.Name'
+                value: project.ObjectID,
+                property: 'Parent.Parent.Parent.Parent.Parent.ObjectID'
             },
             {
-                value: project.Name,
-                property: 'Parent.Parent.Parent.Parent.Parent.Parent.Name'
+                value: project.ObjectID,
+                property: 'Parent.Parent.Parent.Parent.Parent.Parent.ObjectID'
             },
             {
-                value: project.Name,
-                property: 'Parent.Parent.Parent.Parent.Parent.Parent.Parent.Name'
+                value: project.ObjectID,
+                property: 'Parent.Parent.Parent.Parent.Parent.Parent.Parent.ObjectID'
             }
         ];
+//debugger;
         gApp.projectStore = Ext.create('Rally.data.wsapi.Store', {
             model: 'Project',
             autoLoad: true,
@@ -750,7 +882,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
 
     initComponent: function() {
 
-        this.addEvents('columnsReady', 'iterationsReady', 'projectsReady');
+        this.addEvents('columnsReady', 'kickOff', 'projectsReady');
         this.callParent(arguments);
     },
 
@@ -767,7 +899,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
         columnsReady: function() {
             this._getProjectsList();
         },
-        iterationsReady: function() {
+        kickOff: function() {
             this._defineIterationList();
         }
     },
@@ -778,4 +910,43 @@ Ext.define('Niks.Apps.TeamLoading2', {
         //API Docs: https://help.rallydev.com/apps/2.1/doc/
     }
 });
+Ext.define('Rally.ui.bulk.RecordMenuFix', {
+    override: 'Rally.ui.menu.bulk.RecordMenu',
+    _getMenuItems: function() {
+        var records = this.getRecords();
+        var items = this.callParent(arguments);
+        items.push({
+            xtype: 'uicCopyTo',
+            id: 'uicCopyTo'
+        });
+
+        // _.each(items, function(item) {
+        //     Ext.apply(item, {
+        //         records: records,
+        //         store: this.store,
+        //         onBeforeAction: this.onBeforeAction,
+        //         onActionComplete: this.onActionComplete,
+        //         context: this.getContext()
+        //     });
+        // }, this);
+
+        return items;
+    }
+});
+
+Ext.define('uicCopyTo', {
+    alias: 'widget.uicCopyTo',
+
+    config: {
+        text: 'Copy To',
+        handler: function(arg1, arg2, arg3) {
+            this._chooseDestination();
+        }
+    },
+
+    _chooseDestination: function() {
+        debugger;
+    }
+});
+
 }());
