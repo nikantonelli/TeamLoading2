@@ -305,35 +305,43 @@ Ext.define('Niks.Apps.TeamLoading2', {
                             return '#ffffff';   //Default if we fail the above tests
                         })
                     .attr("height", gApp.barHeight)
+                    .attr('index', index)       //Store this away for retrieval later
                     .attr('x', index * gApp.iterationColoumnWidth)
                     .attr("width", gApp.iterationColoumnWidth)
                     .on('click', function(d,i,a) {
                         if (!d.children) {      //Only do this at the bottom
-                            debugger;
+
                             if (!d.cont) {
                                 var cont = Ext.create( 'Ext.Container', {
                                     floating: true,
                                     items: [{
                                         xtype: 'rallygrid',
+                                        margin: '5 5 5 5',
+                                        title: 'Tasks for ' + d.parent.data.record.get('_refObjectName') +
+                                            ', ' + d.data.iterations[index].record.get('_refObjectName') +
+                                            ', ' + d.data.record.get('_refObjectName'),
                                         columnCfgs: [
                                             'FormattedID',
                                             'Name',
-                                            'Owner'
+                                            'Owner',
+                                            'Project',
+                                            'Estimate',
+                                            'ToDo'
                                         ],
                                         storeConfig: {
                                             model: 'task',
                                             filters: [
                                                 {
                                                     property: 'Owner',
-                                                    value: d.data.userRef
+                                                    value: d.parent.data.record.get('_ref')
                                                 },
                                                 {
                                                     property: 'Iteration',
-                                                    value: d.data.iterations[index]
+                                                    value: d.data.iterations[index].record.get('_ref')
                                                 },
                                                 {
                                                     property: 'Project',
-                                                    value: d.data.projRef
+                                                    value: d.data.record.get('_ref')
                                                 }
                                             ]
                                         },
@@ -341,47 +349,55 @@ Ext.define('Niks.Apps.TeamLoading2', {
                                             show: function() { debugger;}
                                         },
                                         constrain: false,
-                                        width: 600,
+                                        width: 800,
                                         height: 'auto',
                                         resizable: true,
                                         closable: true
-                                    }]
+                                    }],
+                                    draggable: true
                                 });
                             }
                             cont.show();
                         }
                         else if ( d.parent) {   //Do this for the middle ones
-                            debugger;
                             var cont = Ext.create( 'Ext.Container', {
                                 floating: true,
                                 items: [{
                                     xtype: 'rallygrid',
+                                    margin: '5 5 5 5',
+                                    title: 'Tasks for ' + d.data.record.get('_refObjectName') +
+                                        ', ' + gApp.iterationList[index].record.get('_refObjectName') ,
                                     columnCfgs: [
                                         'FormattedID',
                                         'Name',
-                                        'Owner'
+                                        'Owner',
+                                        'Project',
+                                        'Estimate',
+                                        'ToDo'
                                     ],
                                     storeConfig: {
                                         model: 'task',
                                         filters: [
                                             {
                                                 property: 'Owner',
-                                                value: d.data.userRef
+                                                value: d.data.record.get('_ref')
                                             },
-                                            // {
-                                            //     property: 'Iteration',
-                                            //     value: d.data.iterations[index]
-                                            // }
+                                            {
+                                                property: 'Iteration',
+                                                value: gApp.iterationList[index].record.get('_ref')
+                                            }
                                         ]
                                     },
                                     listeners: {
                                         show: function() { debugger;}
                                     },
                                     constrain: false,
-                                    width: 600,
+                                    width: 800,
                                     height: 'auto',
-                                    resizable: true
-                                }]
+                                    resizable: true,
+                                    closable: true
+                                }],
+                                draggable: true
                             });
                             cont.show();
 
