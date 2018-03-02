@@ -197,7 +197,8 @@ Ext.define('Niks.Apps.TeamLoading2', {
     _update: function(source) {
         var nodes = gApp.root.descendants();
         var height = Math.max(800, nodes.length * gApp.barHeight + gApp.margin.top + gApp.margin.bottom);
-
+        gApp.down('#rootSurface').setHeight(height);
+        
         var diagonal = d3.linkHorizontal()
             .x(function(d) { return d.y; })
             .y(function(d) { return d.x; });
@@ -238,9 +239,48 @@ Ext.define('Niks.Apps.TeamLoading2', {
                             gApp._click(child);
                         });
                     }
-                } else {
+                } else if (event.ctrlKey) {
+                    //Call up a grid for the UserIterationCapacities for this user
+                    var cont = Ext.create( 'Ext.Container', {
+                        floating: true,
+                        items: [{
+                            xtype: 'rallygrid',
+                            margin: '5 5 5 5',
+                            title: 'Settings for ' + d.parent.data.record.get('_refObjectName') +
+                                ', ' + d.data.iterations[index].record.get('_refObjectName') +
+                                ', ' + d.data.record.get('_refObjectName'),
+                            columnCfgs: [
+                                'Project',
+                                'Iteration',
+                                'Capacity',
+                                'TaskEstimates',
+                            ],
+                            storeConfig: {
+                                model: 'UserIterationCapacities',
+                                filters: [
+                                    {
+                                        property: 'User',
+                                        value: d.parent.data.record.get('_ref')
+                                    }
+                                ]
+                            },
+                            listeners: {
+                                show: function() { debugger;}
+                            },
+                            constrain: false,
+                            width: 800,
+                            height: 'auto',
+                            resizable: true,
+                            closable: true
+                        }],
+                        draggable: true
+                    });
+                    cont.show();
+                }
+                else {
                     gApp._click(d)
                 }
+                event.stopPropagation();
             // })            
             // .on("auxclick", function(d,a,b,c) {
             //     debugger;
