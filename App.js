@@ -189,7 +189,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
         var nodes = gApp.root.descendants();
         var height = Math.max(800, nodes.length * gApp.barHeight + gApp.margin.top + gApp.margin.bottom);
         gApp.down('#rootSurface').setHeight(height);
-        
+
         var diagonal = d3.linkHorizontal()
             .x(function(d) { return d.y; })
             .y(function(d) { return d.x; });
@@ -224,13 +224,20 @@ Ext.define('Niks.Apps.TeamLoading2', {
             .style("fill", function(d) { return gApp.colour(d.data);})
             .on("click", function(d,a,b,c) {
                 if (event.shiftKey) {
+                    var state = d.children;
                     //Find the parent and close all the children (not the parent)
                     if (d.parent && d.parent.children) {
                         _.each(d.parent.children, function(child) {
-                            gApp._click(child);
+                            if (state) {
+                                gApp._minimise(child);
+                            }
+                            else {
+                                gApp._maximise(child);
+                            }
                         });
+                        gApp._update(d);
                     }
-                } else if (event.ctrlKey) {
+                } else if (event.altKey) {
                     //Call up a grid for the UserIterationCapacities for this user
                     var cont = Ext.create( 'Ext.Container', {
                         floating: true,
@@ -504,13 +511,24 @@ Ext.define('Niks.Apps.TeamLoading2', {
         });
     },
 
+    _minimise: function(d) {
+        if (d.children) {
+            d._children = d.children;
+            d.children = null;
+        }
+    },
+    _maximise: function(d) {
+        if (!d.children) {
+            d.children = d._children;
+            d._children = null;
+        }
+    },
+
     _click: function(d) {
         if (d.children) {
-          d._children = d.children;
-          d.children = null;
+            gApp._minimise(d);
         } else {
-          d.children = d._children;
-          d._children = null;
+            gApp._maximise(d);
         }
         gApp._update(d);
     },
