@@ -26,6 +26,7 @@ Ext.define('Niks.Apps.TeamLoading2', {
         {  
             xtype: 'container',
             itemId: 'panelBox',
+            maxWidth: 1200, //even if they ask for many columns, stop the button disappearing far off to the right
             layout: {
                 type: 'vbox',
                 align: 'stretch'
@@ -355,29 +356,42 @@ Ext.define('Niks.Apps.TeamLoading2', {
                         floating: true,
                         items: [{
                             xtype: 'rallygrid',
-                            margin: '5 5 5 5',
+                            margin: '0 5 0 5',
                             title: 'Capacity Settings for ' + d.data.record.get('_refObjectName'),
-                            bulkEditConfig: {
-                                showEdit: false,
-                                showTag: false,
-                                showParent: false,
-                                showRemove: false
-                            },
+                            // bulkEditConfig: {
+                            //     showEdit: false,
+                            //     showTag: false,
+                            //     showParent: false,
+                            //     showRemove: false
+                            // },
                             context: gApp.getContext(),
-                            enableBulkEdit: true,                
                             columnCfgs: [
                                 {
-                                    xtype: 'templatecolumn',
+                                    xtype: 'uicactioncolumn',
+                                    rowActionsFn: function (record) {
+                                        return [
+                                            {
+                                                xtype: 'uicMenu',
+                                                record, record,
+                                                iterations: gApp.iterationList
+                                            }
+                                        ]
+                                    }
+                                },
+                                {
+//                                    xtype: 'templatecolumn',
                                     text: 'Project',
                                     dataIndex: 'Project',
-                                    tpl: Ext.create('Rally.ui.renderer.template.ObjectTemplate', {
-                                        extend: 'Ext.XTemplate',
-                                        fieldName: 'Project'
-                                    }),
-                                    field: {
-                                      xtype: 'rallyprojectpicker'
-                                    }
-                                  },
+                                    editor: null
+                                
+                                //     tpl: Ext.create('Rally.ui.renderer.template.ObjectTemplate', {
+                                //         extend: 'Ext.XTemplate',
+                                //         fieldName: 'Project'
+                                //     }),
+                                //     field: {
+                                //       xtype: 'rallyprojectpicker'
+                                //     }
+                                   },
                                 'Iteration',
                                 'Capacity',
                                 'TaskEstimates',
